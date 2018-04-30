@@ -1,5 +1,6 @@
 import argparse
 import os
+import re
 
 import vtk
 from numpy import fromfile
@@ -14,10 +15,15 @@ def find_threshold(filenames):
 		if m > max_val:
 			max_val = m
 
-	return max_val // 10
+	return max_val // 4
 
 def main(image_width, image_height, filenames_list):
-	thresh = find_threshold(filenames_list)
+	#thresh = find_threshold(filenames_list)
+	#Good that ive found:
+	# CThead 710 (head)/1150 (skull)
+	# MRBrain 1300
+	# bunny 1500
+	thresh = 1300
 
 	print("{} contour value".format(thresh))
 
@@ -33,16 +39,32 @@ def main(image_width, image_height, filenames_list):
 	reader.SetFileDimensionality(2)
 	reader.SetNumberOfScalarComponents(1)
 	#Data held as unsigned big endian shorts, as specified
-	reader.SetDataScalarTypeToUnsignedShort()
+	reader.SetDataScalarTypeToShort()
 	reader.SetDataByteOrderToBigEndian()
-	#Spacing is 1:1:2 as specified
-	reader.SetDataSpacing(1, 1, 2)
+	
+	#Set spacing - the spacing between images is generally different to the spacing between pixels
+	# reader.SetDataSpacing(1, 1, 2)
+	#Bunny spacing
+	reader.SetDataSpacing(1, 1, 1.48)
+
 	#Size of images
 	reader.SetDataExtent(0, image_width - 1, 0, image_height - 1, 0, 0)
 
+	smoother = vtk.vtkImageGaussianSmooth()
+	smoother.SetInputConnection(reader.GetOutputPort())
+	#smoother = vtk.vtkImageMedian3D()
+	#smoother.SetInputConnection(reader.GetOutputPort())
+	#print(smoother.GetStandardDeviations())
+	#print(smoother.GetRadiusFactors())
+
 	surface_extractor = vtk.vtkMarchingCubes()
-	surface_extractor.SetInputConnection(reader.GetOutputPort())
+	surface_extractor.SetInputConnection(smoother.GetOutputPort())
 	surface_extractor.SetValue(0, thresh)
+
+	#largest_component_filter = vtk.vtkConnectivityFilter()
+	#largest_component_filter.SetInputConnection(surface_extractor.GetOutputPort())
+	#largest_component_filter.SetExtractionModeToAllRegions()
+	#largest_component_filter.ColorRegionsOn()
 
 	surface_mapper = vtk.vtkPolyDataMapper()
 	surface_mapper.SetInputConnection(surface_extractor.GetOutputPort())
@@ -78,13 +100,16 @@ if __name__ == "__main__":
 			filenames_list = [os.path.join(os.curdir, args.images[0], filename) for filename in os.listdir(args.images[0])]
 		else:
 			filenames_list = args.images
-		#We expect images in format name.id with id from 1 to num_images
-		#Sort filenames by prefix	
-		sorted_filenames = sorted(filenames_list, key = lambda f : int(f.split(".")[-1]))
+		
+		#Each file is numbered somehow and images are in numbered order
+		#For each filename find the number, then sort the names by number
+		regex = re.compile("\d+")
+		sorted_filenames = sorted(filenames_list, key = lambda filename : int(regex.findall(filename)[0]))
 
 		main(args.x, args.y, sorted_filenames[:args.n])
 	else:
+		for i in args.images:
+			num = i.split("\\")[-1]
+			print(num)
 		raise Exception("imageSource argument must be a list with length equal to numberOfImages OR the name of a folder holding images")
 		exit()
-
-	
