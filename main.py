@@ -130,15 +130,13 @@ def find_thresholds(filenames):
 	elif "bunny" in filenames[0] or filenames[0] == "1":
 		iso_val = 1500
 	else:
-		iso_val = (max_val - min_val) // 10
+		iso_val = max((max_val - min_val) // 10, min_val + 1)
 
 	return min_val, max_val, iso_val
 
 #Build and execute pipeline, from reading image files through to rendering model
 def main(image_width, image_height, filename_list):
 	min_image_val, max_image_val, thresh = find_thresholds(filename_list)
-
-	print("{} contour value".format(thresh))
 
 	#Set up reader which reads the given input images
 	#Designed to read in len(filename_list) images of image_width x image_height scalars
