@@ -15,7 +15,7 @@ def build_UI(pipeline, inital_thresh, min_thresh, max_thresh, filename_list):
 	endcap_width = 0.06
 	endcap_height = 0.003
 
-	#Slider to control the threshold value used by the ContourFilter
+	#Slider to control the threshold value used by MarchingCubes
 	slider_thresh = vtk.vtkSliderRepresentation2D()
 	slider_thresh.SetMinimumValue(min_thresh)
 	slider_thresh.SetMaximumValue(max_thresh)
@@ -73,6 +73,7 @@ def build_UI(pipeline, inital_thresh, min_thresh, max_thresh, filename_list):
 	return slider_thresh, slider_thresh_widget, slider_cutoff, slider_cutoff_widget
 
 #Callbacks for sliders
+#Map slider_thresh value changes to marchingcubes threshold
 class SliderThreshCallback():
 	def __init__(self, surface_extractor):
 		self.surface_extractor = surface_extractor
@@ -82,6 +83,7 @@ class SliderThreshCallback():
 		new_thresh = slider_widget.GetRepresentation().GetValue()
 		self.surface_extractor.SetValue(0, new_thresh)
 
+#Map slider_cutoff value changes to number of images from filename_list read in
 class SliderCutoffCallback():
 	def __init__(self, filename_list, reader):
 		self.filename_list = filename_list
@@ -101,7 +103,7 @@ class SliderCutoffCallback():
 		#Must implicitly state read has been modified in order to reread the data (with new set of images)
 		self.reader.Modified()
 
-#Determine value for isosurface automatically
+#Determine value for isosurface automatically, along with max and min values in image for slider scales
 #Good values (found manually) for 3 test datasets are included
 def find_thresholds(filenames):
 	print("Determining contour threshold")
@@ -111,9 +113,8 @@ def find_thresholds(filenames):
 	max_val = 0
 	min_val = 65536
 	for filename in filenames:
-		#We create an array of unsigned short ints from the binary files
+		#Create an array of unsigned short ints from the binary files, then search for min/max
 		val_array = fromfile(filename, dtype = ">u2")
-		#Search for max, check if higher than max across all files (so far)
 		image_max = max(val_array)
 		if image_max > max_val:
 			max_val = image_max
@@ -129,10 +130,11 @@ def find_thresholds(filenames):
 	elif "bunny" in filenames[0] or filenames[0] == "1":
 		iso_val = 1500
 	else:
-		iso_val = max_val // 10
+		iso_val = (max_val - min_val) // 10
 
 	return min_val, max_val, iso_val
 
+#Build and execute pipeline, from reading image files through to rendering model
 def main(image_width, image_height, filename_list):
 	min_image_val, max_image_val, thresh = find_thresholds(filename_list)
 
@@ -156,7 +158,7 @@ def main(image_width, image_height, filename_list):
 	reader.SetDataByteOrderToBigEndian()	
 	#Set spacing - the spacing between images is generally different to the spacing between pixels
 	#Spacing for bunny is 1:1:1.48, CThead is approximately 1:1:2, MRbrain appears to be similar
-	#to bunny.
+	#to bunny. Could add option to change this with another slider?
 	if "CThead" in filename_list[0]:
 		reader.SetDataSpacing(1, 1, 2)
 	else:
@@ -177,11 +179,14 @@ def main(image_width, image_height, filename_list):
 	#Map polygon mesh to graphics primitives
 	surface_mapper = vtk.vtkPolyDataMapper()
 	surface_mapper.SetInputConnection(surface_extractor.GetOutputPort())
+	#Scalar visibility sets the isosurface to a value related to the image scalars
+	#(maybe average? Documentation unclear) which we don't want.
 	surface_mapper.ScalarVisibilityOff()
 
 	#Create actor for rendering
 	surface = vtk.vtkActor()
 	surface.SetMapper(surface_mapper)
+	#Set colour and lighting for model
 	surface.GetProperty().SetColor(0.7, 0.7, 0.7)
 	surface.GetProperty().SetSpecular(0.25)
 	surface.GetProperty().SetSpecularPower(0.2)
@@ -193,8 +198,8 @@ def main(image_width, image_height, filename_list):
 	#Set to True to produce 2 isosurface models.
 	#This code is specifically suited to the CThead dataset
 	#Could be extended to any number of surfaces (ContourFilter can easily handle multiple threshold values, for instance)
-	two_surface_model = False
-	if two_surface_model:
+	two_surface_models = False
+	if two_surface_models:
 		skull_extractor = vtk.vtkContourFilter()
 		skull_extractor.SetInputConnection(pre_smoother.GetOutputPort())
 		skull_extractor.SetValue(0, 1200)
@@ -231,7 +236,7 @@ def main(image_width, image_height, filename_list):
 				"window"	:	window,
 				"interactor":	interactor}
 
-	#Build sliders for UI. Lots of boilerplatey code, so were moved to separate function
+	#Build sliders for UI. Lots of boilerplatey code, moved to separate function for clarity
 	slider_thresh, slider_thresh_widget, slider_cutoff, slider_cutoff_widget = build_UI(pipeline, thresh, min_image_val, max_image_val, filename_list)
 
 	interactor.Initialize()
@@ -251,8 +256,11 @@ if __name__ == "__main__":
 	args = parser.parse_args()
 	#Program designed to accept name of folder to iterate over, or the n individual images format which was specified
 	if len(args.images) == 1 or len(args.images) == args.n:
+		#args.images is a folder name
 		if len(args.images) == 1:
 			filename_list = [os.path.join(os.curdir, args.images[0], filename) for filename in os.listdir(args.images[0])]
+
+		#args.images is a list of files
 		else:
 			filename_list = args.images
 		
@@ -263,5 +271,5 @@ if __name__ == "__main__":
 
 		main(args.x, args.y, sorted_filenames[:args.n])
 	else:
-		raise Exception("imageSource argument must be a list with length equal to numberOfImages OR the name of a folder holding images.\n{} images given, expected {}".format(len(args.images), args.n))
+		raise Exception("imageSource argument must be a list with length equal to numberOfImages OR the name of a folder holding images.\n{} images specified, expected {}".format(len(args.images), args.n))
 		exit()
