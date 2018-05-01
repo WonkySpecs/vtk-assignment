@@ -176,7 +176,7 @@ def main(image_width, image_height, filename_list):
 	slider_thresh_widget.EnabledOn()
 	slider_thresh_widget.SetNumberOfAnimationSteps(10)
 
-	slider_thresh_widget.AddObserver(vtk.vtkCommand.InteractionEvent, slider_thresh_callback(surface_extractor))
+	slider_thresh_widget.AddObserver(vtk.vtkCommand.EndInteractionEvent, slider_thresh_callback(surface_extractor))
 
 	slider_cutoff = vtk.vtkSliderRepresentation2D()
 	slider_cutoff.SetMinimumValue(1)
@@ -224,12 +224,14 @@ class slider_cutoff_callback():
 	def __call__(self, caller, event):
 		slider_widget = caller
 		slice_val = math.floor(slider_widget.GetRepresentation().GetValue())
+		caller.GetRepresentation().SetValue(slice_val)
 
+		self.filename_array.Initialize()
 		for filename in self.filename_list[:slice_val]:
 			self.filename_array.InsertNextValue(filename)
-		print(self.filename_array)
+
 		self.reader.SetFileNames(self.filename_array)
-		self.reader.Update()
+		self.reader.Modified()
 
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser(description = 'Visualise images of 3D scans given as ')
